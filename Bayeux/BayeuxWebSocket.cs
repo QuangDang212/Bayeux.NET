@@ -53,7 +53,7 @@ namespace Bayeux
 
         public override object ReadJson(JsonReader reader, Type objectType, object existingValue, JsonSerializer serializer)
         {
-            if (objectType != typeof(string)) throw new NotSupportedException();
+            if (reader.ValueType != typeof(string)) throw new NotSupportedException();
             return new ResponseError((string)reader.Value);
         }
 
@@ -156,20 +156,24 @@ namespace Bayeux
 
     public class PublishResponse : ResponseMessage { }
 
-    public class BayeuxWebSocket : StatefulWebSocket
+    public class BayeuxWebSocket : StatefulWebSocket<Message>
     {
         private Advice advice = new Advice() { Interval = 1000, Reconnect = Reconnect.Retry };
         private readonly Dictionary<string, Action<JToken>> subscriptionHandlers = new Dictionary<string, Action<JToken>>();
         private readonly Dictionary<string, TaskCompletionSource<JToken>> responseHandlers = new Dictionary<string, TaskCompletionSource<JToken>>();
         public readonly JsonSerializerSettings SerializerSettings = new JsonSerializerSettings() { ContractResolver = new CamelCasePropertyNamesContractResolver() };
 
+        public override int Interval
+        {
+            get { return advice.Interval; }
+        }
+
         public BayeuxWebSocket(string url) : base(url)
         {
-            subscriptionHandlers.Add("/meta/connect", HandleConnect);
             MessageReceived += BayeuxWebSocket_MessageReceived;
         }
 
-        private void BayeuxWebSocket_MessageReceived(StatefulWebSocket sender, string args)
+        private void BayeuxWebSocket_MessageReceived(StatefulWebSocket<Message> sender, string args)
         {
             var messages = JsonConvert.DeserializeObject<JObject[]>(args, SerializerSettings);
             foreach (var message in messages)
@@ -185,17 +189,18 @@ namespace Bayeux
                     continue;
                 }
                 var channel = message.Value<string>("channel");
-                Action<JToken> subscriptionHandler;
-                if (subscriptionHandlers.TryGetValue(channel, out subscriptionHandler))
+                if (channel == "/meta/connect")
                 {
-                    subscriptionHandler(message);
-                    continue;
+                    HandleConnect(message);
                 }
-                throw new KeyNotFoundException("Could not find appropriate handler for message: \{message}");
+                else
+                {
+                    subscriptionHandlers[channel](message);
+                }
             }
         }
 
-        private int idCounter;
+        private int idCounter = 0;
         private string clientId;
 
         private async void HandleConnect(JToken token)
@@ -206,11 +211,16 @@ namespace Bayeux
             SendConnect();
         }
 
-        public virtual void Send(Message message)
+        public override void Send(Message message)
         {
             message.Id = (++idCounter).ToString();
+            base.Send(message);
+        }
+
+        protected override string SerializeMessage(Message message)
+        {
             message.ClientId = clientId;
-            Send(JsonConvert.SerializeObject(new[] { message }, SerializerSettings));
+            return JsonConvert.SerializeObject(new[] { message }, SerializerSettings);
         }
 
         public async Task<TResponse> SendAsync<TResponse>(Message message)
@@ -236,12 +246,12 @@ namespace Bayeux
         {
             if (advice.Reconnect == Reconnect.None) return;
             await base.ReconnectAsync();
+            await Task.WhenAll(subscriptionHandlers.Keys.Select(ExecuteSubscribeAsync));
         }
 
-        public override async Task ConnectAsync()
+        protected override async Task ExecuteConnectAsync()
         {
-            await base.ConnectAsync();
-            idCounter = 0;
+            await base.ExecuteConnectAsync();
             clientId = null;
             clientId = (await SendAsync<HandshakeResponse>(new HandshakeRequest())).ClientId;
             SendConnect();
@@ -254,9 +264,14 @@ namespace Bayeux
             await base.CloseAsync(code, reason);
         }
 
+        private Task ExecuteSubscribeAsync(string path)
+        {
+            return SendAsync<SubscribeResponse>(new SubscribeRequest() { Subscription = path });
+        }
+
         public async Task SubscribeAsync<T>(string path, Action<T> processMessage)
         {
-            await SendAsync<SubscribeResponse>(new SubscribeRequest() { Subscription = path });
+            await ExecuteSubscribeAsync(path);
             subscriptionHandlers.Add(path, token => processMessage(token.ToObject<DataMessage<T>>().Data));
         }
 

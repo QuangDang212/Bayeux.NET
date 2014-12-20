@@ -35,7 +35,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="BayeuxWebSocket.cs" />
-    <Compile Include="ExposedMessageWebSocket.cs" />
+    <Compile Include="NetworkStatus.cs" />
     <Compile Include="StatefulWebSocket.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
