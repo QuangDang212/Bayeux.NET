@@ -26,7 +26,7 @@ namespace Bayeux
         public string Id { get; set; }
         public virtual string Channel { get; set; }
         public string ClientId { get; set; }
-        public dynamic Ext { get; set; }
+        public JObject Ext { get; set; } = new JObject();
     }
 
     public class ResponseError : Exception
@@ -264,15 +264,16 @@ namespace Bayeux
             await base.CloseAsync(code, reason);
         }
 
-        private Task ExecuteSubscribeAsync(string path)
+        private Task<SubscribeResponse> ExecuteSubscribeAsync(string path)
         {
             return SendAsync<SubscribeResponse>(new SubscribeRequest() { Subscription = path });
         }
 
-        public async Task SubscribeAsync<T>(string path, Action<T> processMessage)
+        public async Task<SubscribeResponse> SubscribeAsync<T>(string path, Action<T> processMessage)
         {
-            await ExecuteSubscribeAsync(path);
+            var response = await ExecuteSubscribeAsync(path);
             subscriptionHandlers.Add(path, token => processMessage(token.ToObject<DataMessage<T>>().Data));
+            return response;
         }
 
         public Task UnsubscribeAsync(string path)
