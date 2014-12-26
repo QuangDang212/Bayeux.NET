@@ -130,6 +130,11 @@ namespace Bayeux
         }
 
         public string Subscription { get; set; }
+
+        public SubscribeRequest(string path)
+        {
+            Subscription = path;
+        }
     }
 
     public class SubscribeResponse : ResponseMessage
@@ -143,6 +148,8 @@ namespace Bayeux
         {
             get { return "/meta/unsubscribe"; }
         }
+
+        public UnsubscribeRequest(string path) : base(path) { }
     }
 
     public class UnsubscribeResponse : SubscribeResponse { }
@@ -150,11 +157,12 @@ namespace Bayeux
     public class DataMessage<TData> : Message
     {
         public TData Data { get; set; }
+
+        public DataMessage(TData data)
+        {
+            Data = data;
+        }
     }
-
-    public class PublishRequest<TData> : DataMessage<TData> { }
-
-    public class PublishResponse : ResponseMessage { }
 
     public class BayeuxWebSocket : StatefulWebSocket<Message>
     {
@@ -266,7 +274,7 @@ namespace Bayeux
 
         private Task<SubscribeResponse> ExecuteSubscribeAsync(string path)
         {
-            return SendAsync<SubscribeResponse>(new SubscribeRequest() { Subscription = path });
+            return SendAsync<SubscribeResponse>(new SubscribeRequest(path));
         }
 
         public async Task<SubscribeResponse> SubscribeAsync<T>(string path, Action<T> processMessage)
@@ -276,10 +284,16 @@ namespace Bayeux
             return response;
         }
 
-        public Task UnsubscribeAsync(string path)
+        public async Task UnsubscribeAsync(string path)
         {
-            subscriptionHandlers.Remove(path);
-            return SendAsync<UnsubscribeResponse>(new UnsubscribeRequest() { Subscription = path });
+            try
+            {
+                await SendAsync<UnsubscribeResponse>(new UnsubscribeRequest(path));
+            }
+            finally
+            {
+                subscriptionHandlers.Remove(path);
+            }
         }
     }
 }

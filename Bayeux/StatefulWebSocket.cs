@@ -77,7 +77,7 @@ namespace Bayeux
             await FlushAsync();
         }
 
-        private bool isFlushing = false;
+        private readonly object isFlushing = new object();
 
         protected virtual string SerializeMessage(T message)
         {
@@ -86,13 +86,14 @@ namespace Bayeux
 
         public async Task FlushAsync()
         {
-            if (!IsConnected || isFlushing) return;
-            isFlushing = true;
+            if (!IsConnected) return;
+            Monitor.Enter(isFlushing);
             try
             {
                 while (messageQueue.Count > 0)
                 {
                     var message = messageQueue.Peek();
+                    var count = messageQueue.Count;
                     var messageStr = SerializeMessage(message);
                     Debug.WriteLine("#\{currentSocket.GetHashCode()} >> \{messageStr}");
                     writer.WriteString(messageStr);
@@ -102,7 +103,7 @@ namespace Bayeux
             }
             finally
             {
-                isFlushing = false;
+                Monitor.Exit(isFlushing);
             }
         }
 
