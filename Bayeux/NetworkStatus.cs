@@ -54,9 +54,11 @@ namespace Bayeux.Util
                     }
                     if (PropertyChanged != null)
                     {
-                        await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
-                            PropertyChanged(this, new PropertyChangedEventArgs(nameof(IsConnected)))
-                        );
+                        DispatchedHandler onPropertyChangedAction = () => PropertyChanged(this, new PropertyChangedEventArgs(nameof(IsConnected)));
+                        if (CoreApplication.Views.Count > 0)
+                            await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(CoreDispatcherPriority.Normal, onPropertyChangedAction);
+                        else
+                            onPropertyChangedAction();
                     }
                 });
             }
