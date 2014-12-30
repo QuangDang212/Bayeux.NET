@@ -203,7 +203,9 @@ namespace Bayeux
                 }
                 else
                 {
-                    subscriptionHandlers[channel](message);
+                    Action<JToken> handler;
+                    subscriptionHandlers.TryGetValue(channel, out handler);
+                    if (handler != null) handler(message);
                 }
             }
         }
@@ -265,11 +267,11 @@ namespace Bayeux
             SendConnect();
         }
 
-        public override async Task CloseAsync(ushort code, string reason)
+        protected override async Task ExecuteCloseAsync(ushort code, string reason)
         {
-            if (!IsConnected) return;
-            await SendAsync<DisconnectResponse>(new DisconnectRequest());
-            await base.CloseAsync(code, reason);
+            subscriptionHandlers.Clear();
+            await Task.WhenAny(SendAsync<DisconnectResponse>(new DisconnectRequest()), Task.Delay(advice.Interval));
+            await base.ExecuteCloseAsync(code, reason);
         }
 
         private Task<SubscribeResponse> ExecuteSubscribeAsync(string path)
