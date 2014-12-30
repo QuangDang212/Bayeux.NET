@@ -159,13 +159,26 @@ namespace Bayeux
             }
         }
 
-        public virtual async Task CloseAsync(ushort code = 1000, string reason = "")
+#pragma warning disable CS1998
+        protected virtual async Task ExecuteCloseAsync(ushort code, string reason)
+#pragma warning restore CS1998
+        {
+            currentSocket?.Close(code, reason);
+        }
+
+        public async Task CloseAsync(ushort code = 1000, string reason = "")
         {
             if (!IsConnected) return;
             Closed -= ClosedWithReconnect;
             var tsc = new TaskCompletionSource<object>();
-            Closed += (sender, args) => tsc.SetResult(null);
-            currentSocket.Close(code, reason);
+            TypedEventHandler<StatefulWebSocket<T>, WebSocketClosedEventArgs> handler = null;
+            handler = (sender, args) =>
+            {
+                tsc.SetResult(null);
+                Closed -= handler;
+            };
+            Closed += handler;
+            await ExecuteCloseAsync(code, reason);
             await tsc.Task;
         }
 
