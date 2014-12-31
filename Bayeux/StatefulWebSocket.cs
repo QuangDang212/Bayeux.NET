@@ -47,6 +47,7 @@ namespace Bayeux
             isConnecting = true;
             try
             {
+                await NetworkStatus.Instance.WhenConnected();
                 await ExecuteConnectAsync();
             }
             finally
@@ -57,15 +58,28 @@ namespace Bayeux
 
         protected virtual async Task ExecuteConnectAsync()
         {
-            currentSocket = new MessageWebSocket();
-            currentSocket.MessageReceived += SocketMessageReceived;
-            currentSocket.Closed += SocketClosed;
-            Debug.WriteLine("Socket #\{currentSocket.GetHashCode()} created");
-            await NetworkStatus.Instance.AutoRetry(async () =>
+            var hasError = true;
+            var isDisposed = true;
+            while (hasError)
             {
-                await currentSocket.ConnectAsync(uri);
-                return true;
-            }, 10, Interval);
+                try
+                {
+                    if (isDisposed)
+                    {
+                        currentSocket = new MessageWebSocket();
+                        currentSocket.MessageReceived += SocketMessageReceived;
+                        currentSocket.Closed += SocketClosed;
+                    }
+                    await currentSocket.ConnectAsync(uri);
+                    hasError = false;
+                }
+                catch (Exception e)
+                {
+                    isDisposed = e is ObjectDisposedException;
+                    await Task.Delay(Interval);
+                }
+            }
+            Debug.WriteLine("Socket #\{currentSocket.GetHashCode()} created");
             writer = new DataWriter(currentSocket.OutputStream);
             IsConnected = true;
             await FlushAsync();
