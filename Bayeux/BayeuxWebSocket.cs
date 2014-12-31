@@ -281,21 +281,22 @@ namespace Bayeux
 
         public async Task<SubscribeResponse> SubscribeAsync<T>(string path, Action<T> processMessage)
         {
-            var response = await ExecuteSubscribeAsync(path);
             subscriptionHandlers.Add(path, token => processMessage(token.ToObject<DataMessage<T>>().Data));
-            return response;
+            try
+            {
+                return await ExecuteSubscribeAsync(path);
+            }
+            catch (Exception e)
+            {
+                subscriptionHandlers.Remove(path);
+                throw e;
+            }
         }
 
         public async Task UnsubscribeAsync(string path)
         {
-            try
-            {
-                await SendAsync<UnsubscribeResponse>(new UnsubscribeRequest(path));
-            }
-            finally
-            {
-                subscriptionHandlers.Remove(path);
-            }
+            subscriptionHandlers.Remove(path);
+            await SendAsync<UnsubscribeResponse>(new UnsubscribeRequest(path));
         }
     }
 }
