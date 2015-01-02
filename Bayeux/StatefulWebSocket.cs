@@ -34,7 +34,7 @@ namespace Bayeux
 
         private void NetworkDisconnected(object sender)
         {
-            currentSocket.Close(1002, string.Empty);
+            currentSocket?.Close(1002, string.Empty);
         }
 
         public bool IsConnected { get; set; }
