@@ -1,4 +1,5 @@
 ﻿using Bayeux.Util;
+using Nito.AsyncEx;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -39,20 +40,15 @@ namespace Bayeux
 
         public bool IsConnected { get; set; }
 
-        private bool isConnecting = false;
+        private readonly AsyncLock connectingLock = new AsyncLock();
 
         public async Task ConnectAsync()
         {
-            if (IsConnected || isConnecting) return;
-            isConnecting = true;
-            try
+            using (await connectingLock.LockAsync())
             {
+                if (IsConnected) return;
                 await NetworkStatus.Instance.WhenConnected();
                 await ExecuteConnectAsync();
-            }
-            finally
-            {
-                isConnecting = false;
             }
         }
 
@@ -91,7 +87,7 @@ namespace Bayeux
             await FlushAsync();
         }
 
-        private readonly object isFlushing = new object();
+        private readonly AsyncLock flushingLock = new AsyncLock();
 
         protected virtual string SerializeMessage(T message)
         {
@@ -101,8 +97,7 @@ namespace Bayeux
         public async Task FlushAsync()
         {
             if (!IsConnected) return;
-            Monitor.Enter(isFlushing);
-            try
+            using (await flushingLock.LockAsync())
             {
                 while (messageQueue.Count > 0)
                 {
@@ -115,10 +110,6 @@ namespace Bayeux
                     messageQueue.Dequeue();
                 }
             }
-            finally
-            {
-                Monitor.Exit(isFlushing);
-            }
         }
 
         protected virtual Task ReconnectAsync()
@@ -128,8 +119,11 @@ namespace Bayeux
 
         private async void ClosedWithReconnect(StatefulWebSocket<T> sender, WebSocketClosedEventArgs args)
         {
-            if (isConnecting) return;
-            await ReconnectAsync();
+            using (await connectingLock.LockAsync())
+            {
+                if (IsConnected) return;
+                await ReconnectAsync();
+            }
         }
 
         protected void SocketMessageReceived(MessageWebSocket sender, MessageWebSocketMessageReceivedEventArgs args)
